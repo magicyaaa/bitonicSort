@@ -7,9 +7,18 @@ import java.util.concurrent.Executors;
 
 /**
  * @program: bitonicSort
- * @description: 双调排序多线程版
+ * @description: 双调排序 多线程
  * @author: Ya
  * @create: 2019-11-14 11:23
+ * <p>
+ * 要求：
+ * 1、数组长度必须为2的整数次幂，未实现padding填充。
+ * 2、线程数量也必须为2的整数次幂
+ * <p>
+ * 3、当分段的双调序列数量小于线程数时，未能完全利用线程，待优化。
+ * 4、最后对双调序列进行排序未能利用到多线程，待优化。
+ * <p>
+ * 在百万至亿级长度的数组测试，比Arrays.sort()快排耗时多50%。
  **/
 public class BitonicSortMultiThread {
     /**
@@ -20,8 +29,6 @@ public class BitonicSortMultiThread {
     private long startTime;
     private ExecutorService exec = Executors.newCachedThreadPool();
     private static CyclicBarrier barrier;
-
-
     /**
      * 默认线程数量 当前是4个线程
      */
@@ -29,6 +36,11 @@ public class BitonicSortMultiThread {
     private static int[] array;
     private List<BitonicSortThread> threads = new ArrayList<>();
 
+    /**
+     * 直接调用构造方法，参数为待排序数组
+     *
+     * @param array
+     */
     public BitonicSortMultiThread(int[] array) {
         barrier = new CyclicBarrier(threadNum, new Runnable() {
             @Override
@@ -81,6 +93,7 @@ class BitonicSortThread implements Runnable {
         try {
             while (!Thread.interrupted()) {
                 // 线程内执行
+                //fixme 当段数小于线程数量时，需要优化
                 if (segment <= array.length) {
                     sortSingle(array, segment, threadNum, id);
                     segment <<= 1;
