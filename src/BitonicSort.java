@@ -65,6 +65,8 @@ public class BitonicSort {
         if (start == mid) {
             return;
         }
+        // 没用
+        int a = 1;
         for (int i = 0; start + i < mid; i++) {
             swap(array, start + i, mid + i, order);
         }
