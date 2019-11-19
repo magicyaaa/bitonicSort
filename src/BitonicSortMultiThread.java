@@ -25,31 +25,32 @@ public class BitonicSortMultiThread {
      * 填充数字 ,需要比待排序数组的所有值都要小
      * 默认Integer.MIN_VALUE
      */
-    private int paddingNum = Integer.MAX_VALUE;
+    static final int PADDING_NUM = Integer.MAX_VALUE;
     private long startTime;
-    private ExecutorService exec = Executors.newCachedThreadPool();
+    private ExecutorService exec;
     private static CyclicBarrier barrier;
     /**
-     * 默认线程数量 当前是4个线程
+     * 默认线程数量 当前是8个线程
      */
-    private int threadNum = 1 << 3;
-    private static int[] array;
-    private List<BitonicSortThread> threads = new ArrayList<>();
+    public static final int THREAD_SIZE = 1 << 3;
 
-    /**
-     * 直接调用构造方法，参数为待排序数组
-     *
-     * @param array
-     */
-    public BitonicSortMultiThread(int[] array) {
-        barrier = new CyclicBarrier(threadNum, new Runnable() {
+    private List<BitonicSortThread> threads;
+
+
+    public BitonicSortMultiThread() {
+
+    }
+
+    public void bitonicSort(int[] array) {
+        exec = Executors.newCachedThreadPool();
+        threads = new ArrayList<>(THREAD_SIZE);
+        barrier = new CyclicBarrier(THREAD_SIZE, new Runnable() {
             @Override
             public void run() {
                 for (int i = 0; i < threads.size(); i++) {
                     //如果每个线程都完成了 任务终止
                     boolean res = true;
                     for (BitonicSortThread bst : threads) {
-                        // fixme 当段数 （数组长度／segment ）小于 线程数量时，无法完全利用线程。 最终双调排序是单线程，需优化。
                         if (!bst.isComplete()) {
                             res = false;
                         }
@@ -57,7 +58,7 @@ public class BitonicSortMultiThread {
                     if (res) {
                         exec.shutdownNow();
                         // 打印花费时间
-                        System.out.println("System.out...... -> " + (System.nanoTime() - startTime));
+                        System.out.println("System.out......双调 -> " + (System.nanoTime() - startTime));
                         return;
                     }
                 }
@@ -66,8 +67,8 @@ public class BitonicSortMultiThread {
         // 添加任务
         //记录一下开始时间
         startTime = System.nanoTime();
-        for (int i = 0; i < threadNum; i++) {
-            BitonicSortThread bst = new BitonicSortThread(barrier, array, threadNum);
+        for (int i = 0; i < THREAD_SIZE; i++) {
+            BitonicSortThread bst = new BitonicSortThread(barrier, array, THREAD_SIZE);
             threads.add(bst);
             exec.execute(bst);
         }
@@ -77,18 +78,28 @@ public class BitonicSortMultiThread {
 class BitonicSortThread implements Runnable {
     private static CyclicBarrier barrier;
     private static int counter = 0;
-    private final int id = counter++;
-    private int segment = 2;
-    private int t_segment = segment;
-    private boolean t_order;
-    private boolean isRecursion = false;
-    private int threadNum;
+    private final int ID = counter++;
     private int[] array;
+    private int perThreadCount;
+    private int segment = 2;
+    private int t_segment = 2;
+    private int part;
+    private int t_part;
+    private int inner_part = 1;
+
+    private int group;
+    private int inner_group;
+    private int group_offset;
+    private int inner_offset;
+    private int totalCount;
+    private boolean order = true;
 
     public BitonicSortThread(CyclicBarrier b, int[] array, int threadNum) {
         barrier = b;
         this.array = array;
-        this.threadNum = threadNum;
+        this.perThreadCount = (array.length >> 1) / BitonicSortMultiThread.THREAD_SIZE;
+        part = array.length >> 1;
+        t_part = part;
     }
 
     @Override
@@ -96,246 +107,72 @@ class BitonicSortThread implements Runnable {
         try {
             while (!Thread.interrupted()) {
                 // 线程内执行
-                //fixme 当段数小于线程数量时，需要优化
                 if (segment <= array.length) {
-                    sortSingle2(array, segment, threadNum, id);
+                    sort();
                 }
                 barrier.await();
             }
-        } catch (InterruptedException | BrokenBarrierException e) {
+        } catch (Exception e) {
+            System.out.println("System.out...... ID-> " + ID);
             e.printStackTrace();
         }
     }
 
+    private void sort() {
+        inner_group = BitonicSortMultiThread.THREAD_SIZE / t_part;
+        group_offset = (ID / part) % inner_part;
+        inner_offset = (ID / part) / inner_part;
 
-    /**
-     * 固定8线程排序
-     */
-    private void sortSingle4() {
+        int start, end, limit;
 
-    }
-
-    /**
-     * 最终第一层
-     */
-    private void finallySort1() {
-        int part = 1;
-        int seg = array.length;
-        int segmentThreadNum = threadNum / part;
-        int threadSegmentNum = (seg >> 1) / segmentThreadNum;
-        int start, end;
-        for (int i = 0; i < threadSegmentNum; i++) {
-            start = id * threadSegmentNum + i;
-            end = start + (seg >> 1);
-            swap(array, start, end, true);
-        }
-    }
-
-    /**
-     * 最终第二层排序
-     */
-    private void finallySort2() {
-        int part = 2;
-        int seg = array.length >> 1;
-        int segmentThreadNum = threadNum / part;
-        int threadSegmentNum = (seg >> 1) / segmentThreadNum;
-        int start, end;
-        for (int i = 0; i < threadSegmentNum; i++) {
-            start = id * threadSegmentNum + i;
-            end = start + (seg >> 1);
-            swap(array, start, end, true);
-        }
-    }
-
-    /**
-     * 最终第三层排序
-     */
-    private void finallySort3() {
-        int part = 4;
-        int seg = array.length >> 2;
-        int segmentThreadNum = threadNum / part;
-        int threadSegmentNum = (seg >> 1) / segmentThreadNum;
-        int start, end;
-        for (int i = 0; i < threadSegmentNum; i++) {
-            start = id * threadSegmentNum + i;
-            end = start + (seg >> 1);
-            swap(array, start, end, true);
-        }
-    }
-
-    /**
-     * 最终递归排序
-     */
-    private void finallySort(int part) {
-
-    }
-
-    /**
-     * 再次新写一个
-     */
-    private void sortSingle3() {
-        boolean order;
-        int part;
-        int t_part;
-        int t_id;
-        int offset;
-        int inner_offset;
-        int start;
-        int end;
-        int segmentThreadNum;
-        int threadSegmentNum;
-
-        //一开始 线程数量小于等于段数 ,每个线程处理一个或多个段
-        part = array.length / segment;
-        t_part = array.length / t_segment;
-        if (isRecursion) {
-            order = t_order;
-            t_id = id % part;
-            offset = (id / part) % t_part;
-
-        }
-        if (threadNum <= part) {
-            order = (id & 1) == 0;
-            offset = threadNum * segment;
-            for (int i = 0; i * offset < array.length; i++) {
-                start = i * offset;
-                end = start + (segment >> 1);
-                sortSegment(array, start, end, order);
+        if (inner_part == 1) {
+            group = ID % part;
+            order = (group & 1) == 0;
+            limit = part / BitonicSortMultiThread.THREAD_SIZE;
+            if (inner_group <= 1) {
+                for (int i = 0; i < limit; i++) {
+                    start = group * segment + i * segment * BitonicSortMultiThread.THREAD_SIZE;
+                    sortSegment(array, start, start + segment, order);
+                }
+                segment <<= 1;
+                t_segment = segment;
+                part >>= 1;
+                t_part = part;
+                inner_part = 1;
+            } else {
+                for (int i = 0; i < perThreadCount; i++) {
+                    start = group * segment
+                            + group_offset * t_segment // 可以去掉这行 因为 group_offset = 0
+                            + inner_offset
+                            + i * inner_group;
+                    swap(array, start, start + (t_segment >> 1), order);
+                }
+                inner_part <<= 1;
+                t_segment >>= 1;
+                t_part <<= 1;
             }
-            segment <<= 1;
-            t_segment = segment;
-        } else if (threadNum > part) {
-            //一开始，线程数量大于段数，则每个段由多个线程处理
-            order = (id & 1) == 0;
-            t_id = id % part;
-            offset = (id / part) % part;
-            segmentThreadNum = threadNum / part;
-            threadSegmentNum = (segment >> 1) / segmentThreadNum;
-            inner_offset = t_id * threadSegmentNum;
-            for (int i = 0; i < threadSegmentNum; i++) {
-                start = t_id * segment + offset * threadSegmentNum + i;
-                end = start + (segment >> 1);
-                swap(array, start, end, order);
-            }
-            isRecursion = true;
-            t_segment = segment >> 1;
-            t_order = order;
-        }
-
-    }
-
-    private void sortSingle2(int[] array, int segment, int threadNum, int id) {
-        //fixme 变量先声明 内部使用
-        boolean order = (id & 1) == 0;
-        int part = array.length / segment;
-        //fixme 可以改为局部变量
-        int t_part = array.length / t_segment;
-        // 段id
-        int t_id;
-        int offset;
-        int start;
-        int end;
-
-        if (part == 1 && !isRecursion) {
-            //最终的双调排序
-            order = true;
-            //单个线程可以处理每段行数
-            int threadSegmentNum = (segment >> 1) / threadNum;
-            start = id * threadSegmentNum;
-            end = start + (segment >> 1);
-            for (int i = 0; i < threadSegmentNum; i++) {
-                swap(array, start + i, end + i, order);
-            }
-            this.isRecursion = true;
-            this.t_segment = segment >> 1;
-            this.t_order = order;
-            this.segment <<= 1;
-        /*} else if (part == 1 && isRecursion && t_part < threadNum) {
-            //最终排序 递归内
-            int segmentThreadNum = threadNum / t_part;
-            t_id = id % t_part;
-            offset = (id / t_part);
-            int threadSegmentNum = (t_segment >> 1) / segmentThreadNum;
-            start = t_id * t_segment + offset * threadSegmentNum;
-            end = start + (t_segment >> 1);
-            for (int i = 0; i < threadSegmentNum; i++) {
-                swap(array, start + i, end + i, order);
-            }
-            this.isRecursion = true;
-            this.t_segment >>= 1;*/
-
-        } else if (isRecursion && t_part >= threadNum) {
-            //段内递归中 && 段数 >= 线程数  --> 实际上会刚好匹配 段数=线程数,直接一次递归完成
-            t_id = id % part;
-            offset = id / part;
-            //段内递归，segment不变,因为线程在段上是跳跃的;偏移量为t_segment
-            start = segment * t_id + offset * t_segment;
-            end = start + t_segment;
-            sortSegment(array, start, end, t_order);
-            this.isRecursion = false;
-            this.segment <<= 1;
-        } else if (isRecursion) {
-            //段内递归 && 段数 < 线程数
-            int segmentThreadNum = threadNum / t_part;
-            t_id = id % part;
-            offset = (id / part) % t_part;
-            //内部偏移  todo 有问题?
-            int inner_offset = id / t_part;
-            start = t_id * segment + offset * t_segment + inner_offset * ((t_segment >> 1) / segmentThreadNum);
-            end = start + (t_segment >> 1);
-            for (int i = 0; i < (t_segment >> 1) / segmentThreadNum; i++) {
-                swap(array, start + i, end + i, order);
-            }
-            this.isRecursion = true;
-            this.t_segment >>= 1;
-        } else if (part < threadNum) {
-            //分段数量 < 线程数量   --> 意味着一个段可以被多个线程处理
-            int segmentThreadNum = threadNum / part;
-            t_id = id % part;
-            offset = (id / part) % part;
-            start = t_id * segment + offset * ((segment >> 1) / segmentThreadNum);
-            end = start + (segment >> 1);
-            for (int i = 0; i < (segment >> 1) / segmentThreadNum; i++) {
-                swap(array, start + i, end + i, order);
-            }
-            this.isRecursion = true;
-            this.t_segment = segment >> 1;
-            this.t_order = order;
         } else {
-            // 分段数量 >= 线程数量   --> 意味着一个线程要处理多个段
-            start = id * segment;
-            for (int i = 0; id * segment + segment * threadNum * i < array.length; i++) {
-                start = id * segment + segment * threadNum * i;
-                end = start + segment;
-                sortSegment(array, start, end, order);
+            if (inner_group <= 1) {
+                start = group * segment + group_offset * t_segment;
+                sortSegment(array, start, start + t_segment, order);
+                segment <<= 1;
+                t_segment = segment;
+                part >>= 1;
+                t_part = part;
+                inner_part = 1;
+            } else {
+                for (int i = 0; i < perThreadCount; i++) {
+                    start = group * segment
+                            + group_offset * t_segment
+                            + inner_offset
+                            + i * inner_group;
+                    swap(array, start, start + (t_segment >> 1), order);
+                }
+                inner_part <<= 1;
+                t_segment >>= 1;
+                t_part <<= 1;
             }
-            this.segment <<= 1;
         }
-    }
-
-    /**
-     * 进行分段排序
-     * 奇数段递增，偶数段递减,这里已经由id分配好
-     * <p>
-     * 按线程数量分组，
-     * 每个线程排自己的部分
-     */
-    private void sortSingle(int[] array, int segment, int threadNum, int id) {
-        boolean order = (id & 1) == 0;
-        int start;
-        int end;
-        for (int i = 0; segment * threadNum * i + id * segment < array.length; i++) {
-            start = segment * threadNum * i + id * segment;
-            end = start + segment;
-            sortSegment(array, start, end, order);
-        }
-        this.segment <<= 1;
-    }
-
-    /**
-     * 一个段由多个线程处理
-     */
-    private static void sortSegmentByMutilThread(int[] array, int start, int end, boolean order) {
 
     }
 
@@ -343,11 +180,11 @@ class BitonicSortThread implements Runnable {
      * 段内递归 排序
      * 段数 >= 线程数； 一个段只能由单个线程递归处理
      */
-    private void sortSegment(int[] array, int start, int end, boolean order) {
-        int mid = (start + end) >> 1;
-        if (start == mid) {
+    private static void sortSegment(int[] array, int start, int end, boolean order) {
+        if (start == end - 1) {
             return;
         }
+        int mid = (start + end) >> 1;
         for (int i = 0; start + i < mid; i++) {
             swap(array, start + i, mid + i, order);
         }
@@ -384,28 +221,13 @@ class BitonicSortThread implements Runnable {
         }
     }
 
-    public int getSegment() {
-        return this.segment;
+    public boolean isComplete() {
+        if (this.part == 0) {
+            counter = 0;
+            return true;
+        } else {
+            return false;
+        }
     }
 
-    /**
-     * 判断当前线程是否完成
-     * 如果当前段长度已经大于数组长度 ，说明已经完成
-     */
-    public boolean isComplete() {
-        if (this.isRecursion) {
-            //段内递归完成 需要取消递归状态
-            if (this.t_segment == 1) {
-                this.isRecursion = false;
-                this.segment <<= 1;
-                this.t_segment = segment;
-                this.t_order = true;
-            }
-        } else {
-            if (this.segment > this.array.length) {
-                return true;
-            }
-        }
-        return false;
-    }
 }
